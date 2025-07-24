@@ -513,14 +513,14 @@
 
         // Enhanced categories configuration
         const categories = [
-            { id: 'restaurant', label: 'Restaurants', emoji: '🍽️', query: 'amenity=restaurant' },
-            { id: 'cafe', label: 'Cafes', emoji: '☕', query: 'amenity=cafe' },
-            { id: 'bar', label: 'Bars', emoji: '🍺', query: 'amenity=bar|amenity=pub' },
-            { id: 'attraction', label: 'Attractions', emoji: '📸', query: 'tourism=attraction|tourism=museum|tourism=gallery' },
-            { id: 'dessert', label: 'Dessert & Ice Cream', emoji: '🍦', query: 'amenity=ice_cream|shop=pastry|shop=confectionery' },
-            { id: 'historical', label: 'Historical Sites', emoji: '🏛️', query: 'historic=*|tourism=archaeological_site|tourism=castle|tourism=monument' },
-            { id: 'park', label: 'Parks', emoji: '🌳', query: 'leisure=park|leisure=garden' },
-            { id: 'trail', label: 'Trails & Hiking', emoji: '🥾', query: 'highway=footway|highway=path|tourism=viewpoint|natural=peak' },
+            { id: 'restaurant', label: 'Restaurants', emoji: '🍽️', query: 'amenity=restaurant|amenity=food_court|amenity=fast_food' },
+            { id: 'cafe', label: 'Cafes', emoji: '☕', query: 'amenity=cafe|amenity=coffee_shop' },
+            { id: 'bar', label: 'Bars & Breweries', emoji: '🍺', query: 'amenity=bar|amenity=pub|amenity=biergarten|craft=brewery|amenity=nightclub' },
+            { id: 'attraction', label: 'Attractions', emoji: '📸', query: 'tourism=attraction|tourism=museum|tourism=gallery|tourism=artwork|tourism=theme_park' },
+            { id: 'dessert', label: 'Dessert & Ice Cream', emoji: '🍦', query: 'amenity=ice_cream|shop=pastry|shop=confectionery|shop=chocolate|cuisine=ice_cream' },
+            { id: 'historical', label: 'Historical Sites', emoji: '🏛️', query: 'historic=*|tourism=archaeological_site|tourism=castle|tourism=monument|tourism=memorial' },
+            { id: 'park', label: 'Parks', emoji: '🌳', query: 'leisure=park|leisure=garden|leisure=nature_reserve' },
+            { id: 'trail', label: 'Trails & Hiking', emoji: '🥾', query: 'highway=footway|highway=path|tourism=viewpoint|natural=peak|route=hiking' },
         ];
 
         // Initialize
@@ -689,15 +689,17 @@
                     return parts.map(part => {
                         // Handle wildcard queries
                         if (part.includes('=*')) {
-                            return `node[${part}](around:${maxDistance},${lat},${lon});`;
+                            return `node[${part}](around:${maxDistance},${lat},${lon});
+                                   way[${part}](around:${maxDistance},${lat},${lon});`;
                         }
-                        return `node[${part}](around:${maxDistance},${lat},${lon});`;
+                        return `node[${part}](around:${maxDistance},${lat},${lon});
+                               way[${part}](around:${maxDistance},${lat},${lon});`;
                     }).join('\n');
                 })
                 .join('\n');
             
             return `
-                [out:json][timeout:25];
+                [out:json][timeout:30];
                 (
                     ${queries}
                 );
@@ -740,23 +742,36 @@
                 
                 // Process places
                 places = data.elements
-                    .filter(place => place.tags && place.tags.name && place.lat && place.lon)
+                    .filter(place => place.tags && place.tags.name)
                     .map(place => {
+                        // Get coordinates - handle both nodes and ways
+                        let lat, lon;
+                        if (place.type === 'node') {
+                            lat = place.lat;
+                            lon = place.lon;
+                        } else if (place.type === 'way' && place.center) {
+                            lat = place.center.lat;
+                            lon = place.center.lon;
+                        } else {
+                            return null; // Skip if no valid coordinates
+                        }
+                        
+                        if (!lat || !lon) return null;
                         // Determine category
                         let category = 'attraction';
-                        if (place.tags.amenity === 'restaurant') category = 'restaurant';
-                        else if (place.tags.amenity === 'cafe') category = 'cafe';
-                        else if (place.tags.amenity === 'bar' || place.tags.amenity === 'pub') category = 'bar';
-                        else if (place.tags.amenity === 'ice_cream' || place.tags.shop === 'pastry' || place.tags.shop === 'confectionery') category = 'dessert';
-                        else if (place.tags.historic || place.tags.tourism === 'archaeological_site' || place.tags.tourism === 'castle' || place.tags.tourism === 'monument') category = 'historical';
-                        else if (place.tags.leisure === 'park' || place.tags.leisure === 'garden') category = 'park';
-                        else if (place.tags.highway === 'footway' || place.tags.highway === 'path' || place.tags.tourism === 'viewpoint' || place.tags.natural === 'peak') category = 'trail';
+                        if (place.tags.amenity === 'restaurant' || place.tags.amenity === 'food_court' || place.tags.amenity === 'fast_food') category = 'restaurant';
+                        else if (place.tags.amenity === 'cafe' || place.tags.amenity === 'coffee_shop') category = 'cafe';
+                        else if (place.tags.amenity === 'bar' || place.tags.amenity === 'pub' || place.tags.amenity === 'biergarten' || place.tags.craft === 'brewery' || place.tags.amenity === 'nightclub') category = 'bar';
+                        else if (place.tags.amenity === 'ice_cream' || place.tags.shop === 'pastry' || place.tags.shop === 'confectionery' || place.tags.shop === 'chocolate' || place.tags.cuisine === 'ice_cream') category = 'dessert';
+                        else if (place.tags.historic || place.tags.tourism === 'archaeological_site' || place.tags.tourism === 'castle' || place.tags.tourism === 'monument' || place.tags.tourism === 'memorial') category = 'historical';
+                        else if (place.tags.leisure === 'park' || place.tags.leisure === 'garden' || place.tags.leisure === 'nature_reserve') category = 'park';
+                        else if (place.tags.highway === 'footway' || place.tags.highway === 'path' || place.tags.tourism === 'viewpoint' || place.tags.natural === 'peak' || place.tags.route === 'hiking') category = 'trail';
                         else if (place.tags.tourism) category = 'attraction';
 
                         // Calculate distance
                         const distance = calculateDistance(
                             userLocation[0], userLocation[1],
-                            place.lat, place.lon
+                            lat, lon
                         );
 
                         // Try to extract rating/popularity info from tags
@@ -792,8 +807,8 @@
                             id: place.id,
                             name: place.tags.name,
                             category,
-                            lat: place.lat,
-                            lon: place.lon,
+                            lat: lat,
+                            lon: lon,
                             distance,
                             walkingDistance: null, // Will be calculated later
                             cuisine: place.tags.cuisine,
@@ -807,7 +822,13 @@
                             wikipedia: place.tags.wikipedia,
                             description: place.tags.description,
                         };
-                    });
+                    })
+                    .filter(place => place !== null) // Remove null entries
+                    .sort((a, b) => a.distance - b.distance)
+                    .slice(0, 100); // Increased limit to 100
+
+                // Sort by distance initially
+                sortPlaces();
 
                 // Sort by distance initially
                 sortPlaces();
@@ -948,19 +969,80 @@
                 selectedCategories.includes(place.category) && place.distance <= maxDistance
             );
             
-            // Create markers string for OpenStreetMap
-            let markers = `${userLocation[0]},${userLocation[1]},pm2rdm`; // Red marker for user
+            if (filtered.length === 0) {
+                document.getElementById('mapFrame').srcdoc = `
+                    <div style="display: flex; align-items: center; justify-content: center; height: 100%; font-family: sans-serif; color: #6b7280;">
+                        <p>No places to display on map</p>
+                    </div>
+                `;
+                return;
+            }
             
-            filtered.slice(0, 20).forEach(place => {
-                const cat = categories.find(c => c.id === place.category);
-                markers += `~${place.lat},${place.lon},pm2blm`; // Blue markers for places
-            });
+            // Calculate bounds
+            const bounds = calculateBoundingBox([userLocation, ...filtered.map(p => [p.lat, p.lon])]);
+            const centerLat = (bounds[1] + bounds[3]) / 2;
+            const centerLon = (bounds[0] + bounds[2]) / 2;
             
-            // Use OpenStreetMap static image
-            const bbox = calculateBoundingBox([userLocation, ...filtered.map(p => [p.lat, p.lon])]);
-            const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox.join(',')}&layer=mapnik&marker=${userLocation[0]},${userLocation[1]}`;
+            // Create a custom HTML with markers
+            const mapHtml = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <style>
+                        body { margin: 0; padding: 0; font-family: sans-serif; }
+                        .map-container { position: relative; width: 100%; height: 100%; overflow: hidden; }
+                        .map-image { width: 100%; height: 100%; object-fit: cover; }
+                        .marker { position: absolute; transform: translate(-50%, -100%); cursor: pointer; }
+                        .marker-user { width: 30px; height: 30px; background: #ef4444; border: 3px solid white; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+                        .marker-place { width: 25px; height: 25px; background: #3b82f6; border: 2px solid white; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; font-size: 14px; }
+                        .tooltip { position: absolute; background: white; padding: 8px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); font-size: 12px; display: none; z-index: 1000; bottom: 100%; left: 50%; transform: translateX(-50%) translateY(-5px); white-space: nowrap; }
+                        .marker:hover .tooltip { display: block; }
+                        .legend { position: absolute; bottom: 10px; left: 10px; background: white; padding: 10px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); font-size: 12px; }
+                        .legend-item { display: flex; align-items: center; gap: 5px; margin: 5px 0; }
+                        .legend-marker { width: 15px; height: 15px; border-radius: 50%; border: 2px solid white; }
+                    </style>
+                </head>
+                <body>
+                    <div class="map-container">
+                        <img class="map-image" src="https://www.openstreetmap.org/export/embed.html?bbox=${bounds.join(',')}&layer=mapnik" alt="Map">
+                        
+                        <!-- User marker -->
+                        <div class="marker" style="left: ${((userLocation[1] - bounds[0]) / (bounds[2] - bounds[0]) * 100)}%; top: ${(1 - (userLocation[0] - bounds[1]) / (bounds[3] - bounds[1])) * 100}%;">
+                            <div class="marker-user"></div>
+                            <div class="tooltip">You are here</div>
+                        </div>
+                        
+                        <!-- Place markers -->
+                        ${filtered.slice(0, 30).map(place => {
+                            const cat = categories.find(c => c.id === place.category);
+                            const left = ((place.lon - bounds[0]) / (bounds[2] - bounds[0]) * 100);
+                            const top = (1 - (place.lat - bounds[1]) / (bounds[3] - bounds[1])) * 100;
+                            return `
+                                <div class="marker" style="left: ${left}%; top: ${top}%;">
+                                    <div class="marker-place">${cat.emoji}</div>
+                                    <div class="tooltip">${place.name} (${place.distance}m)</div>
+                                </div>
+                            `;
+                        }).join('')}
+                        
+                        <!-- Legend -->
+                        <div class="legend">
+                            <div class="legend-item">
+                                <div class="legend-marker" style="background: #ef4444;"></div>
+                                <span>Your location</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-marker" style="background: #3b82f6;"></div>
+                                <span>Places (hover for names)</span>
+                            </div>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `;
             
-            document.getElementById('mapFrame').src = mapUrl;
+            document.getElementById('mapFrame').srcdoc = mapHtml;
         }
 
         // Calculate bounding box for map
